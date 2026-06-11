@@ -2,6 +2,8 @@
 #   Project: misc-cise File: resNet50-challenge.py.py  Created: 6/8/26 22:04 Author: etyrer & his robot dog™
 import numpy as np
 import os
+import platform
+import subprocess
 import torch
 import torchvision.models as models
 
@@ -23,11 +25,35 @@ from tkinter.filedialog import askopenfilename
 
 # method to use file dialog to select an image file
 def select_image_file():
+    """
+    Select an image file.
+
+    On macOS, prefer the native Apple file chooser because Tk dialogs can behave oddly
+    when launched from PyCharm or uv. Keep Tk as a fallback for other platforms.
+    """
+    if platform.system() == "Darwin":
+        script = '''
+        set chosenFile to choose file with prompt "Select an image file"
+        POSIX path of chosenFile
+        '''
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            file_path = result.stdout.strip()
+            return file_path or None
+        except Exception as exc:
+            print(f"macOS file picker failed, falling back to Tk: {exc}")
+
     root = Tk()
-    root.withdraw()  # Hide the root window
+    root.withdraw()  # Hide the root window.
 
     # macOS/Tk is happier when each extension is provided as a separate pattern.
     file_path = askopenfilename(
+        parent=root,
         title="Select an image file",
         filetypes=[
             ("Image files", ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.gif")),
@@ -83,21 +109,21 @@ def load_image(image_path=None):
     image_tensor = transform(image).unsqueeze(0)  # Add batch dimension
     return image_tensor
 
-def predict(model, transform, image, topk=5):
-    """Predict the top-k classes for the given image using the provided model and transformation.
+def predict(model, image_tensor, topk=5):
+    """
+    Predict the top-k classes for an already-transformed image tensor.
     """
     with torch.no_grad():
         logits = model(image_tensor)
-        # Apply softmax to get probabilities
-        probabilities = torch.softmax(logits, dim=1)
-        top_probabilities, top_classes = torch.topk(probabilities, k=topk)
 
-        results = []
+    probabilities = torch.softmax(logits, dim=1)
+    top_probabilities, top_classes = torch.topk(probabilities, k=topk, dim=1)
 
-        for prob, cls in zip(top_probabilities[0], top_classes[0]):
-            results.append((cls.item(), prob.item()))
+    results = []
+    for prob, cls in zip(top_probabilities[0], top_classes[0]):
+        results.append((cls.item(), prob.item()))
 
-        return results
+    return results
 
 
 def convert_resnet50_to_coreml(model, output_path="resnet50.mlpackage"):
@@ -145,30 +171,34 @@ if __name__ == "__main__":
     print("Loading ResNet-50 model... ImageNet pre-trained weights will be used.")
     model = load_resnet50(pretrained=True)
 
+    # ------------------------------------------------------------------
+    # Learning Notes / Previous Attempts
+    # ------------------------------------------------------------------
     # Optional Core ML export path:
     # Uncomment this if you want to create a Core ML model package for macOS/iOS use.
     # coreml_path = convert_resnet50_to_coreml(model)
     # print(f"Saved Core ML model to: {coreml_path}")
-    transform = get_transform()
+    # transform = get_transform
+
+
+    # Learning notes / previous attempts intentionally preserved for reference.
+    # Keeping these while working through the exercise is perfectly fine.
     labels = load_imagenet_labels()
+    print("Opening image picker...")
     image_path = select_image_file()  # Open file dialog to select an image, or set to None to generate a random image
+    print(f"selected file: {image_path}")
 
     if image_path:
         image_tensor = load_image(image_path)
+        print(image_tensor.shape)
     else:
         image_tensor = load_image()  # Generate a random image if no path is provided
 
-    # image_path = with open ("goldfish.jpg", "r") as file:
-    # image_tensor = file.read()
-    # Set to None to generate a random image, or specify a path to an actual image file
-    # image_tensor = load_image("german-shep.jpg")
-
-    # at some point add code to load an image from file using os dialog.
     print(f"Loading image... If you want to test with a random image, set the image_path variable to None.")
     # image_tensor = load_image("goldfish.jpg")
 
     print("Predicting based on inference from the model...")
-    predictions = predict(model, get_transform(), image_tensor)
+    predictions = predict(model, image_tensor)
 
     print("Top-5 Predictions:")
     for cls, prob in predictions:
