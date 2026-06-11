@@ -15,7 +15,7 @@ except ImportError:
 
 from torchvision.models import ResNet50_Weights
 from torchvision import transforms
-from PIL import Image
+from PIL import Image  # we'll use Pillow to handle image loading and processing
 
 # use tkinter to open a file dialog to select an image file
 from tkinter import Tk
