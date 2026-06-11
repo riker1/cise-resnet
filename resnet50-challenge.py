@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#   Project: misc-cise File: resNet50-challenge.py.py  Created: 6/8/26 22:04 Author: etyrer & his robot dog™
+#   Project: misc-cise File: resnet50-challenge.py.py  Created: 6/8/26 22:04 Author: etyrer & his robot dog™
 import numpy as np
 import os
 import platform
