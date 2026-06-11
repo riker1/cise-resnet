@@ -1,0 +1,6 @@
+{
+    0: "tench",
+    1: "goldfish",
+    2: "great white shark",
+    3: "tiger shark",
+}
