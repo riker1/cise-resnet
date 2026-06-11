@@ -3,22 +3,28 @@
 import numpy as np
 import os
 import torch
-import coremltools as ct
 import torchvision.models as models
+
+# Core ML conversion is optional and only relevant if you want to export the model for use on macOS/iOS.
+# It is not required for loading the model or making predictions in Python.
+
+try:
+    import coremltools as ct
+except ImportError:
+    ct = None
+
 from torchvision.models import ResNet50_Weights
 from torchvision import transforms
 from PIL import Image
 
-# libary to open a file dialog to select an image file on macOS
-
+# use tkinter to open a file dialog to select an image file
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 
-# python to use macOS file dialog to select an image file
+# method to use file dialog to select an image file
 def select_image_file():
     root = Tk()
     root.withdraw()  # Hide the root window
-    root.update()
 
     # macOS/Tk is happier when each extension is provided as a separate pattern.
     file_path = askopenfilename(
@@ -77,21 +83,45 @@ def load_image(image_path=None):
     image_tensor = transform(image).unsqueeze(0)  # Add batch dimension
     return image_tensor
 
-def predict(model, image_tensor, topk=5):
-    """
-    Predict the top-k classes for the given already-transformed image tensor.
+def predict(model, transform, image, topk=5):
+    """Predict the top-k classes for the given image using the provided model and transformation.
     """
     with torch.no_grad():
         logits = model(image_tensor)
+        # Apply softmax to get probabilities
+        probabilities = torch.softmax(logits, dim=1)
+        top_probabilities, top_classes = torch.topk(probabilities, k=topk)
 
-    probabilities = torch.softmax(logits, dim=1)
-    top_probabilities, top_classes = torch.topk(probabilities, k=topk, dim=1)
+        results = []
 
-    results = []
-    for prob, cls in zip(top_probabilities[0], top_classes[0]):
-        results.append((cls.item(), prob.item()))
+        for prob, cls in zip(top_probabilities[0], top_classes[0]):
+            results.append((cls.item(), prob.item()))
 
-    return results
+        return results
+
+
+def convert_resnet50_to_coreml(model, output_path="resnet50.mlpackage"):
+    """
+    Convert the PyTorch ResNet-50 model to a Core ML model package.
+
+    Core ML conversion happens after the PyTorch model is loaded.
+    It does not belong in load_image() or get_transform().
+    """
+    if ct is None:
+        raise ImportError("coremltools is not installed. Run: uv add coremltools")
+
+    example_input = torch.rand(1, 3, 224, 224)
+
+    traced_model = torch.jit.trace(model, example_input)
+
+    coreml_model = ct.convert(
+        traced_model,
+        inputs=[ct.TensorType(name="input", shape=example_input.shape)],
+        convert_to="mlprogram",
+    )
+
+    coreml_model.save(output_path)
+    return output_path
 
 def load_imagenet_labels(labels_path=None):
     """Load ImageNet class labels from a file."""
@@ -114,6 +144,11 @@ if __name__ == "__main__":
 
     print("Loading ResNet-50 model... ImageNet pre-trained weights will be used.")
     model = load_resnet50(pretrained=True)
+
+    # Optional Core ML export path:
+    # Uncomment this if you want to create a Core ML model package for macOS/iOS use.
+    # coreml_path = convert_resnet50_to_coreml(model)
+    # print(f"Saved Core ML model to: {coreml_path}")
     transform = get_transform()
     labels = load_imagenet_labels()
     image_path = select_image_file()  # Open file dialog to select an image, or set to None to generate a random image
@@ -129,12 +164,11 @@ if __name__ == "__main__":
     # image_tensor = load_image("german-shep.jpg")
 
     # at some point add code to load an image from file using os dialog.
-    # print("Opening file dialog to select an image... If you want to test with a random image, simply cancel the dialog.")
     print(f"Loading image... If you want to test with a random image, set the image_path variable to None.")
     # image_tensor = load_image("goldfish.jpg")
 
     print("Predicting based on inference from the model...")
-    predictions = predict(model, image_tensor)
+    predictions = predict(model, get_transform(), image_tensor)
 
     print("Top-5 Predictions:")
     for cls, prob in predictions:
